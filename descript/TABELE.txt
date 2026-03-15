@@ -1,0 +1,154 @@
+1. Alkohol
+Tabela główna produktów (alkohol).
+Przewidywana liczba rekordów: ~…
+Atrybuty
+•	produkt_id (PK)
+•	nazwa
+•	marka
+•	kategoria_id (FK)
+•	producent_id (FK)
+•	kraj_pochodzenia
+•	rocznik (np. dla wina/whisky) może być NULL
+•	procent_alkoholu
+•	pojemnosc_ml
+•	typ_opakowania (butelka/puszka/paczka)
+•	data_wprowadzenia_do_sprzedazy
+•	data_wycofania
+•	kod_kreskowy
+•	cena_producenta
+•	stawka_vat
+________________________________________
+2. Tyton
+Tabela produktów tytoniowych (papierosy, cygara, cygaretki, papierosy elektroniczne itp.)
+Przewidywana liczba rekordów: ~…
+Atrybuty
+•	produkt_id (PK)
+•	nazwa
+•	marka
+•	kategoria_id (FK)
+•	producent_id (FK)
+•	kraj_pochodzenia
+•	liczba_sztuk_w_opakowaniu
+•	typ_opakowania (paczka/skrzynka/folia)
+•	data_wprowadzenia_do_sprzedazy
+•	data_wycofania
+•	kod_kreskowy
+•	cena_producenta
+•	stawka_vat
+________________________________________
+3. KATEGORIE_PRODUKTOW
+~30 rekordów
+Atrybuty
+•	kategoria_id (PK)
+•	nazwa
+•	opis
+•	czy_alkohol
+•	czy_tyton
+Przykłady kategorii:
+•	piwo
+•	wino
+•	whisky
+•	wódka
+•	rum
+•	gin
+•	likier
+•	papierosy
+•	cygara
+•	tytoń
+•	itd
+________________________________________
+4. PRODUCENCI
+~500 rekordów
+Atrybuty
+•	producent_id (PK)
+•	nazwa
+•	kraj
+•	miasto
+•	rok_zalozenia
+•	strona_www
+•	czy_aktywny
+________________________________________
+5. KLIENCI
+~1 000 000 rekordów
+Atrybuty
+•	klient_id (PK)
+•	imie
+•	nazwisko
+•	data_urodzenia
+•	plec
+•	miasto
+•	telefon
+•	email
+•	data_rejestracji
+•	status_klienta
+•	punkty_lojalnosciowe
+________________________________________
+6. PRACOWNICY
+~100 rekordów
+Atrybuty
+•	pracownik_id (PK)
+•	imie
+•	nazwisko
+•	stanowisko
+•	data_zatrudnienia
+•	data_zwolnienia może być null
+•	pensja
+•	telefon
+•	email
+•	status_pracownika
+________________________________________
+7. Paragony 
+Jedna z głównych tabel generujących dane.
+~2 500 000 rekordów
+Atrybuty
+•	paragon_id (PK)
+•	numer_paragonu
+•	data_sprzedazy
+•	godzina_sprzedazy
+•	pracownik_id (FK)
+•	klient_id (FK)
+•	forma_platnosci
+•	wartosc_netto
+•	wartosc_brutto
+•	status_transakcji
+________________________________________
+8. POZYCJE_PARAGONY
+Każdy produkt na paragonie.
+~5 500 000 rekordów
+Atrybuty
+•	pozycja_id (PK)
+•	paragon_id (FK)
+•	produkt_id (FK)
+•	wartosc_netto
+•	wartosc_brutto
+________________________________________
+9. FAKTURY
+Nie każdy paragon ma fakturę.
+~500 000 rekordów
+Atrybuty
+•	faktura_id (PK)
+•	numer_faktury
+•	sprzedaz_id (FK)
+•	data_wystawienia
+•	data_sprzedazy
+•	nabywca_nazwa
+•	nabywca_nip
+•	nabywca_adres
+•	wartosc_netto
+•	wartosc_vat
+•	wartosc_brutto
+•	status_faktury
+________________________________________
+10. DOSTAWY
+Dostawy produktów do sklepu.
+~400 000 rekordów
+Atrybuty
+•	dostawa_id (PK)
+•	numer_dostawy
+•	producent_id (FK)
+•	data_zamowienia
+•	data_dostawy
+•	wartosc_netto
+•	wartosc_brutto
+•	status_dostawy
+•	numer_faktury_zakupu

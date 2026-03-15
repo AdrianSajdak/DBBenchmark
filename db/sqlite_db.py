@@ -1,4 +1,5 @@
-"""SQLite – implementacja scenariuszy CRUD."""
+"""SQLite – implementacja CRUD dla modelu TABELE.txt."""
+import os
 import sqlite3
 from typing import Any, Dict, List
 
@@ -18,15 +19,17 @@ class SQLiteDB(BaseDB):
         self.cfg = config
         self.conn = None
 
-    # -------- Lifecycle --------
+    # ────────── Lifecycle ──────────
 
     def connect(self) -> bool:
         try:
+            parent = os.path.dirname(os.path.abspath(self.cfg.database))
+            os.makedirs(parent, exist_ok=True)
             self.conn = sqlite3.connect(self.cfg.database)
             self.conn.row_factory = _dict_factory
             self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.execute("PRAGMA synchronous=NORMAL")
-            self.conn.execute("PRAGMA cache_size=-65536")   # 64 MB
+            self.conn.execute("PRAGMA cache_size=-65536")
             self.conn.execute("PRAGMA foreign_keys=ON")
             return True
         except Exception as e:
@@ -39,53 +42,124 @@ class SQLiteDB(BaseDB):
 
     def setup_schema(self) -> None:
         stmts = [
-            """CREATE TABLE IF NOT EXISTS stores (
-                store_id INTEGER PRIMARY KEY,
-                name TEXT, city TEXT, address TEXT, phone TEXT)""",
-            """CREATE TABLE IF NOT EXISTS categories (
-                category_id INTEGER PRIMARY KEY,
-                name TEXT, description TEXT)""",
-            """CREATE TABLE IF NOT EXISTS suppliers (
-                supplier_id INTEGER PRIMARY KEY,
-                name TEXT, phone TEXT, email TEXT, address TEXT)""",
-            """CREATE TABLE IF NOT EXISTS employees (
-                employee_id INTEGER PRIMARY KEY,
-                first_name TEXT, last_name TEXT, position TEXT,
-                hire_date TEXT, salary REAL,
-                store_id INTEGER REFERENCES stores(store_id) ON DELETE SET NULL)""",
-            """CREATE TABLE IF NOT EXISTS customers (
-                customer_id INTEGER PRIMARY KEY,
-                first_name TEXT, last_name TEXT, email TEXT,
-                phone TEXT, birth_date TEXT)""",
-            """CREATE TABLE IF NOT EXISTS products (
-                product_id INTEGER PRIMARY KEY,
-                name TEXT, category_id INTEGER, supplier_id INTEGER,
-                price REAL, barcode TEXT,
-                FOREIGN KEY (category_id) REFERENCES categories(category_id) ON DELETE SET NULL,
-                FOREIGN KEY (supplier_id) REFERENCES suppliers(supplier_id) ON DELETE SET NULL)""",
-            """CREATE TABLE IF NOT EXISTS orders (
-                order_id INTEGER PRIMARY KEY,
-                customer_id INTEGER, employee_id INTEGER,
-                order_date TEXT, total_amount REAL, status TEXT,
-                FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE SET NULL,
-                FOREIGN KEY (employee_id) REFERENCES employees(employee_id) ON DELETE SET NULL)""",
-            """CREATE TABLE IF NOT EXISTS order_items (
-                order_item_id INTEGER PRIMARY KEY,
-                order_id INTEGER, product_id INTEGER,
-                quantity INTEGER, price REAL,
-                FOREIGN KEY (order_id)   REFERENCES orders(order_id)   ON DELETE CASCADE,
-                FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE SET NULL)""",
-            """CREATE TABLE IF NOT EXISTS inventory (
-                inventory_id INTEGER PRIMARY KEY,
-                product_id INTEGER, store_id INTEGER,
-                quantity INTEGER, last_update TEXT,
-                FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
-                FOREIGN KEY (store_id)   REFERENCES stores(store_id)   ON DELETE CASCADE)""",
-            """CREATE TABLE IF NOT EXISTS payments (
-                payment_id INTEGER PRIMARY KEY,
-                order_id INTEGER, payment_method TEXT,
-                payment_date TEXT, amount REAL,
-                FOREIGN KEY (order_id) REFERENCES orders(order_id) ON DELETE CASCADE)""",
+            """CREATE TABLE IF NOT EXISTS kategorie_produktow (
+                kategoria_id INTEGER PRIMARY KEY,
+                nazwa TEXT NOT NULL,
+                opis TEXT,
+                czy_alkohol INTEGER DEFAULT 0,
+                czy_tyton INTEGER DEFAULT 0
+            )""",
+            """CREATE TABLE IF NOT EXISTS producenci (
+                producent_id INTEGER PRIMARY KEY,
+                nazwa TEXT NOT NULL,
+                kraj TEXT,
+                miasto TEXT,
+                rok_zalozenia INTEGER,
+                strona_www TEXT,
+                czy_aktywny INTEGER DEFAULT 1
+            )""",
+            """CREATE TABLE IF NOT EXISTS pracownicy (
+                pracownik_id INTEGER PRIMARY KEY,
+                imie TEXT NOT NULL,
+                nazwisko TEXT NOT NULL,
+                stanowisko TEXT,
+                data_zatrudnienia TEXT,
+                data_zwolnienia TEXT,
+                pensja REAL,
+                telefon TEXT,
+                email TEXT,
+                status_pracownika TEXT
+            )""",
+            """CREATE TABLE IF NOT EXISTS klienci (
+                klient_id INTEGER PRIMARY KEY,
+                imie TEXT NOT NULL,
+                nazwisko TEXT NOT NULL,
+                data_urodzenia TEXT,
+                plec TEXT,
+                miasto TEXT,
+                telefon TEXT,
+                email TEXT,
+                data_rejestracji TEXT,
+                status_klienta TEXT,
+                punkty_lojalnosciowe INTEGER DEFAULT 0
+            )""",
+            """CREATE TABLE IF NOT EXISTS alkohol (
+                produkt_id INTEGER PRIMARY KEY,
+                nazwa TEXT NOT NULL,
+                marka TEXT,
+                kategoria_id INTEGER REFERENCES kategorie_produktow(kategoria_id),
+                producent_id INTEGER REFERENCES producenci(producent_id),
+                kraj_pochodzenia TEXT,
+                rocznik INTEGER,
+                procent_alkoholu REAL,
+                pojemnosc_ml INTEGER,
+                typ_opakowania TEXT,
+                data_wprowadzenia_do_sprzedazy TEXT,
+                data_wycofania TEXT,
+                kod_kreskowy TEXT,
+                cena_producenta REAL,
+                stawka_vat INTEGER
+            )""",
+            """CREATE TABLE IF NOT EXISTS tyton (
+                produkt_id INTEGER PRIMARY KEY,
+                nazwa TEXT NOT NULL,
+                marka TEXT,
+                kategoria_id INTEGER REFERENCES kategorie_produktow(kategoria_id),
+                producent_id INTEGER REFERENCES producenci(producent_id),
+                kraj_pochodzenia TEXT,
+                liczba_sztuk_w_opakowaniu INTEGER,
+                typ_opakowania TEXT,
+                data_wprowadzenia_do_sprzedazy TEXT,
+                data_wycofania TEXT,
+                kod_kreskowy TEXT,
+                cena_producenta REAL,
+                stawka_vat INTEGER
+            )""",
+            """CREATE TABLE IF NOT EXISTS paragony (
+                paragon_id INTEGER PRIMARY KEY,
+                numer_paragonu TEXT,
+                data_sprzedazy TEXT,
+                godzina_sprzedazy TEXT,
+                pracownik_id INTEGER REFERENCES pracownicy(pracownik_id),
+                klient_id INTEGER REFERENCES klienci(klient_id),
+                forma_platnosci TEXT,
+                wartosc_netto REAL,
+                wartosc_brutto REAL,
+                status_transakcji TEXT
+            )""",
+            """CREATE TABLE IF NOT EXISTS pozycje_paragonu (
+                pozycja_id INTEGER PRIMARY KEY,
+                paragon_id INTEGER REFERENCES paragony(paragon_id) ON DELETE CASCADE,
+                produkt_id INTEGER,
+                typ_produktu TEXT,
+                wartosc_netto REAL,
+                wartosc_brutto REAL
+            )""",
+            """CREATE TABLE IF NOT EXISTS faktury (
+                faktura_id INTEGER PRIMARY KEY,
+                numer_faktury TEXT,
+                sprzedaz_id INTEGER REFERENCES paragony(paragon_id),
+                data_wystawienia TEXT,
+                data_sprzedazy TEXT,
+                nabywca_nazwa TEXT,
+                nabywca_nip TEXT,
+                nabywca_adres TEXT,
+                wartosc_netto REAL,
+                wartosc_vat REAL,
+                wartosc_brutto REAL,
+                status_faktury TEXT
+            )""",
+            """CREATE TABLE IF NOT EXISTS dostawy (
+                dostawa_id INTEGER PRIMARY KEY,
+                numer_dostawy TEXT,
+                producent_id INTEGER REFERENCES producenci(producent_id),
+                data_zamowienia TEXT,
+                data_dostawy TEXT,
+                wartosc_netto REAL,
+                wartosc_brutto REAL,
+                status_dostawy TEXT,
+                numer_faktury_zakupu TEXT
+            )""",
         ]
         with self.conn:
             for stmt in stmts:
@@ -93,192 +167,254 @@ class SQLiteDB(BaseDB):
 
     def clear_data(self) -> None:
         self.conn.execute("PRAGMA foreign_keys=OFF")
-        for t in ("payments", "order_items", "orders", "inventory",
-                  "products", "employees", "customers",
-                  "suppliers", "categories", "stores"):
+        for t in ("pozycje_paragonu", "faktury", "paragony", "dostawy",
+                  "alkohol", "tyton", "klienci", "pracownicy",
+                  "producenci", "kategorie_produktow"):
             self.conn.execute(f"DELETE FROM {t}")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.commit()
 
     def drop_schema(self) -> None:
         self.conn.execute("PRAGMA foreign_keys=OFF")
-        for t in ("payments", "order_items", "orders", "inventory",
-                  "products", "employees", "customers",
-                  "suppliers", "categories", "stores"):
+        for t in ("pozycje_paragonu", "faktury", "paragony", "dostawy",
+                  "alkohol", "tyton", "klienci", "pracownicy",
+                  "producenci", "kategorie_produktow"):
             self.conn.execute(f"DROP TABLE IF EXISTS {t}")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.commit()
 
-    # -------- Helper --------
+    # ────────── Indeksy (ocena 4.0) ──────────
+
+    def create_indexes(self) -> None:
+        idxs = [
+            "CREATE INDEX IF NOT EXISTS idx_alk_kategoria ON alkohol(kategoria_id)",
+            "CREATE INDEX IF NOT EXISTS idx_alk_producent ON alkohol(producent_id)",
+            "CREATE INDEX IF NOT EXISTS idx_alk_cena ON alkohol(cena_producenta)",
+            "CREATE INDEX IF NOT EXISTS idx_alk_marka ON alkohol(marka)",
+            "CREATE INDEX IF NOT EXISTS idx_tyt_kategoria ON tyton(kategoria_id)",
+            "CREATE INDEX IF NOT EXISTS idx_tyt_producent ON tyton(producent_id)",
+            "CREATE INDEX IF NOT EXISTS idx_par_klient ON paragony(klient_id)",
+            "CREATE INDEX IF NOT EXISTS idx_par_pracownik ON paragony(pracownik_id)",
+            "CREATE INDEX IF NOT EXISTS idx_par_data ON paragony(data_sprzedazy)",
+            "CREATE INDEX IF NOT EXISTS idx_poz_paragon ON pozycje_paragonu(paragon_id)",
+            "CREATE INDEX IF NOT EXISTS idx_poz_produkt"
+            " ON pozycje_paragonu(produkt_id, typ_produktu)",
+            "CREATE INDEX IF NOT EXISTS idx_fak_sprzedaz ON faktury(sprzedaz_id)",
+            "CREATE INDEX IF NOT EXISTS idx_fak_data ON faktury(data_wystawienia)",
+            "CREATE INDEX IF NOT EXISTS idx_dos_producent ON dostawy(producent_id)",
+            "CREATE INDEX IF NOT EXISTS idx_dos_data ON dostawy(data_zamowienia)",
+            "CREATE INDEX IF NOT EXISTS idx_kli_miasto ON klienci(miasto)",
+            "CREATE INDEX IF NOT EXISTS idx_kli_status ON klienci(status_klienta)",
+        ]
+        with self.conn:
+            for sql in idxs:
+                self.conn.execute(sql)
+
+    def drop_indexes(self) -> None:
+        idxs = [
+            "idx_alk_kategoria", "idx_alk_producent", "idx_alk_cena", "idx_alk_marka",
+            "idx_tyt_kategoria", "idx_tyt_producent",
+            "idx_par_klient", "idx_par_pracownik", "idx_par_data",
+            "idx_poz_paragon", "idx_poz_produkt",
+            "idx_fak_sprzedaz", "idx_fak_data",
+            "idx_dos_producent", "idx_dos_data",
+            "idx_kli_miasto", "idx_kli_status",
+        ]
+        with self.conn:
+            for idx in idxs:
+                self.conn.execute(f"DROP INDEX IF EXISTS {idx}")
+
+    # ────────── Helpers ──────────
 
     def _bulk_insert(self, table: str, rows: List[Dict]):
         if not rows:
             return
         keys = list(rows[0].keys())
         placeholders = ", ".join(["?"] * len(keys))
-        sql = f"INSERT OR IGNORE INTO {table} ({', '.join(keys)}) VALUES ({placeholders})"
+        sql = (f"INSERT OR IGNORE INTO {table} ({', '.join(keys)}) "
+               f"VALUES ({placeholders})")
         with self.conn:
             for i in range(0, len(rows), BATCH):
                 batch = rows[i: i + BATCH]
-                self.conn.executemany(sql, [tuple(r[k] for k in keys) for r in batch])
+                self.conn.executemany(
+                    sql, [tuple(r[k] for k in keys) for r in batch])
 
-    # -------- Seeding --------
+    # ────────── Seeding ──────────
 
     def seed(self, data: Dict[str, List[Dict]], progress_callback=None) -> None:
+        from config import SEED_ORDER
         cb = progress_callback or (lambda t, d, tot: None)
-        order = ["stores", "categories", "suppliers", "employees",
-                 "customers", "products", "orders", "order_items",
-                 "inventory", "payments"]
-        for table in order:
+        total = sum(len(v) for v in data.values())
+        for table in SEED_ORDER:
             rows = data.get(table, [])
-            cb(table, len(rows), sum(len(v) for v in data.values()))
+            cb(table, len(rows), total)
             self._bulk_insert(table, rows)
 
-    # ===================== CREATE =====================
+    # ==================== CREATE ====================
 
-    def C1_add_single_product(self, product: Dict) -> None:
+    def C1_add_single_alkohol(self, product: Dict) -> None:
+        cols = list(product.keys())
+        vals = ", ".join(["?"] * len(cols))
         with self.conn:
             self.conn.execute(
-                "INSERT INTO products (product_id, name, category_id, supplier_id, price, barcode) "
-                "VALUES (:product_id, :name, :category_id, :supplier_id, :price, :barcode)",
-                product,
+                f"INSERT INTO alkohol ({', '.join(cols)}) VALUES ({vals})",
+                tuple(product[c] for c in cols),
             )
 
-    def C2_add_bulk_products(self, products: List[Dict]) -> None:
-        self._bulk_insert("products", products)
+    def C2_add_bulk_alkohol(self, products: List[Dict]) -> None:
+        self._bulk_insert("alkohol", products)
 
-    def C3_add_customer(self, customer: Dict) -> None:
+    def C3_add_klient(self, klient: Dict) -> None:
+        cols = list(klient.keys())
+        vals = ", ".join(["?"] * len(cols))
         with self.conn:
             self.conn.execute(
-                "INSERT INTO customers (customer_id, first_name, last_name, email, phone, birth_date) "
-                "VALUES (:customer_id, :first_name, :last_name, :email, :phone, :birth_date)",
-                customer,
+                f"INSERT INTO klienci ({', '.join(cols)}) VALUES ({vals})",
+                tuple(klient[c] for c in cols),
             )
 
-    def C4_add_order(self, order: Dict) -> None:
+    def C4_add_paragon(self, paragon: Dict) -> None:
+        cols = list(paragon.keys())
+        vals = ", ".join(["?"] * len(cols))
         with self.conn:
             self.conn.execute(
-                "INSERT INTO orders (order_id, customer_id, employee_id, order_date, total_amount, status) "
-                "VALUES (:order_id, :customer_id, :employee_id, :order_date, :total_amount, :status)",
-                order,
+                f"INSERT INTO paragony ({', '.join(cols)}) VALUES ({vals})",
+                tuple(paragon[c] for c in cols),
             )
 
-    def C5_add_order_items(self, items: List[Dict]) -> None:
-        self._bulk_insert("order_items", items)
+    def C5_add_pozycje_paragonu(self, pozycje: List[Dict]) -> None:
+        self._bulk_insert("pozycje_paragonu", pozycje)
 
-    def C6_add_inventory_records(self, records: List[Dict]) -> None:
-        self._bulk_insert("inventory", records)
+    def C6_add_faktura(self, faktura: Dict) -> None:
+        cols = list(faktura.keys())
+        vals = ", ".join(["?"] * len(cols))
+        with self.conn:
+            self.conn.execute(
+                f"INSERT INTO faktury ({', '.join(cols)}) VALUES ({vals})",
+                tuple(faktura[c] for c in cols),
+            )
 
-    # ===================== READ =====================
+    # ==================== READ ====================
 
-    def R1_get_product_by_id(self, product_id: int) -> Any:
-        cur = self.conn.execute("SELECT * FROM products WHERE product_id = ?", (product_id,))
+    def R1_get_alkohol_by_id(self, produkt_id: int) -> Any:
+        cur = self.conn.execute(
+            "SELECT * FROM alkohol WHERE produkt_id = ?", (produkt_id,))
         return cur.fetchone()
 
-    def R2_get_products_by_category(self, category_id: int) -> List:
-        cur = self.conn.execute("SELECT * FROM products WHERE category_id = ?", (category_id,))
-        return cur.fetchall()
-
-    def R3_get_customer_orders(self, customer_id: int) -> List:
-        cur = self.conn.execute("SELECT * FROM orders WHERE customer_id = ?", (customer_id,))
-        return cur.fetchall()
-
-    def R4_get_order_details(self, order_id: int) -> Any:
+    def R2_get_products_by_kategoria(self, kategoria_id: int) -> List:
         cur = self.conn.execute(
-            """SELECT o.*, oi.order_item_id, oi.product_id, oi.quantity, oi.price AS item_price,
-                      p.name AS product_name
-               FROM orders o
-               LEFT JOIN order_items oi ON o.order_id = oi.order_id
-               LEFT JOIN products p    ON oi.product_id = p.product_id
-               WHERE o.order_id = ?""",
-            (order_id,),
+            "SELECT * FROM alkohol WHERE kategoria_id = ?", (kategoria_id,))
+        return cur.fetchall()
+
+    def R3_get_paragony_klienta(self, klient_id: int) -> List:
+        cur = self.conn.execute(
+            "SELECT * FROM paragony WHERE klient_id = ?", (klient_id,))
+        return cur.fetchall()
+
+    def R4_get_paragon_details(self, paragon_id: int) -> Any:
+        cur = self.conn.execute(
+            """SELECT p.*, pp.pozycja_id, pp.produkt_id, pp.typ_produktu,
+                      pp.wartosc_netto AS poz_netto, pp.wartosc_brutto AS poz_brutto
+               FROM paragony p
+               LEFT JOIN pozycje_paragonu pp ON p.paragon_id = pp.paragon_id
+               WHERE p.paragon_id = ?""",
+            (paragon_id,),
         )
         return cur.fetchall()
 
-    def R5_get_top_expensive_products(self, limit: int = 10) -> List:
+    def R5_get_top_expensive_alkohol(self, limit: int = 10) -> List:
         cur = self.conn.execute(
-            "SELECT * FROM products ORDER BY price DESC LIMIT ?", (limit,)
+            "SELECT * FROM alkohol ORDER BY cena_producenta DESC LIMIT ?",
+            (limit,),
         )
         return cur.fetchall()
 
-    def R6_get_inventory(self) -> List:
-        cur = self.conn.execute("SELECT * FROM inventory")
+    def R6_get_faktury_by_okres(self, data_od: str, data_do: str) -> List:
+        cur = self.conn.execute(
+            "SELECT * FROM faktury WHERE data_wystawienia BETWEEN ? AND ?",
+            (data_od, data_do),
+        )
         return cur.fetchall()
 
-    # ===================== UPDATE =====================
+    # ==================== UPDATE ====================
 
-    def U1_update_product_price(self, product_id: int, new_price: float) -> None:
+    def U1_update_cena_alkohol(self, produkt_id: int, nowa_cena: float) -> None:
         with self.conn:
             self.conn.execute(
-                "UPDATE products SET price = ? WHERE product_id = ?", (new_price, product_id)
+                "UPDATE alkohol SET cena_producenta = ? WHERE produkt_id = ?",
+                (nowa_cena, produkt_id),
             )
 
-    def U2_update_customer(self, customer_id: int, data: Dict) -> None:
+    def U2_update_klient(self, klient_id: int, data: Dict) -> None:
         with self.conn:
             self.conn.execute(
-                "UPDATE customers SET email = ?, phone = ? WHERE customer_id = ?",
-                (data["email"], data["phone"], customer_id),
+                "UPDATE klienci SET email = ?, telefon = ? WHERE klient_id = ?",
+                (data["email"], data["telefon"], klient_id),
             )
 
-    def U3_update_inventory(self, product_id: int, store_id: int, qty: int) -> None:
-        from datetime import date
+    def U3_update_status_paragonu(self, paragon_id: int, status: str) -> None:
         with self.conn:
             self.conn.execute(
-                "UPDATE inventory SET quantity = ?, last_update = ? "
-                "WHERE product_id = ? AND store_id = ?",
-                (qty, str(date.today()), product_id, store_id),
+                "UPDATE paragony SET status_transakcji = ? WHERE paragon_id = ?",
+                (status, paragon_id),
             )
 
-    def U4_bulk_update_product_prices(self, category_id: int, discount_pct: float) -> None:
-        factor = round(1 - discount_pct / 100, 4)
+    def U4_bulk_update_ceny_kategoria(self, kategoria_id: int,
+                                       rabat_pct: float) -> None:
+        factor = round(1 - rabat_pct / 100, 4)
         with self.conn:
             self.conn.execute(
-                "UPDATE products SET price = ROUND(price * ?, 2) WHERE category_id = ?",
-                (factor, category_id),
+                "UPDATE alkohol SET cena_producenta = ROUND(cena_producenta * ?, 2) "
+                "WHERE kategoria_id = ?",
+                (factor, kategoria_id),
             )
 
-    def U5_update_order_status(self, order_id: int, status: str) -> None:
+    def U5_update_status_dostawy(self, dostawa_id: int, status: str) -> None:
         with self.conn:
             self.conn.execute(
-                "UPDATE orders SET status = ? WHERE order_id = ?", (status, order_id)
+                "UPDATE dostawy SET status_dostawy = ? WHERE dostawa_id = ?",
+                (status, dostawa_id),
             )
 
-    def U6_update_supplier(self, supplier_id: int, data: Dict) -> None:
+    def U6_update_producent(self, producent_id: int, data: Dict) -> None:
         with self.conn:
             self.conn.execute(
-                "UPDATE suppliers SET email = ?, phone = ? WHERE supplier_id = ?",
-                (data["email"], data["phone"], supplier_id),
+                "UPDATE producenci SET nazwa = ?, strona_www = ? WHERE producent_id = ?",
+                (data["nazwa"], data["strona_www"], producent_id),
             )
 
-    # ===================== DELETE =====================
+    # ==================== DELETE ====================
 
-    def D1_delete_product(self, product_id: int) -> None:
-        self.conn.execute("PRAGMA foreign_keys=OFF")
+    def D1_delete_alkohol(self, produkt_id: int) -> None:
         with self.conn:
-            self.conn.execute("DELETE FROM products WHERE product_id = ?", (product_id,))
-        self.conn.execute("PRAGMA foreign_keys=ON")
+            self.conn.execute(
+                "DELETE FROM alkohol WHERE produkt_id = ?", (produkt_id,))
 
-    def D2_delete_customer(self, customer_id: int) -> None:
+    def D2_delete_klient(self, klient_id: int) -> None:
         with self.conn:
-            self.conn.execute("DELETE FROM customers WHERE customer_id = ?", (customer_id,))
+            self.conn.execute(
+                "DELETE FROM klienci WHERE klient_id = ?", (klient_id,))
 
-    def D3_delete_order(self, order_id: int) -> None:
+    def D3_delete_paragon(self, paragon_id: int) -> None:
         with self.conn:
-            self.conn.execute("DELETE FROM orders WHERE order_id = ?", (order_id,))
+            # CASCADE usunie pozycje_paragonu
+            self.conn.execute(
+                "DELETE FROM paragony WHERE paragon_id = ?", (paragon_id,))
 
-    def D4_delete_order_items(self, order_id: int) -> None:
+    def D4_delete_pozycje_paragonu(self, paragon_id: int) -> None:
         with self.conn:
-            self.conn.execute("DELETE FROM order_items WHERE order_id = ?", (order_id,))
+            self.conn.execute(
+                "DELETE FROM pozycje_paragonu WHERE paragon_id = ?",
+                (paragon_id,))
 
-    def D5_bulk_delete_products(self, product_ids: List[int]) -> None:
-        self.conn.execute("PRAGMA foreign_keys=OFF")
+    def D5_bulk_delete_tyton(self, produkt_ids: List[int]) -> None:
         with self.conn:
             self.conn.executemany(
-                "DELETE FROM products WHERE product_id = ?",
-                [(pid,) for pid in product_ids],
+                "DELETE FROM tyton WHERE produkt_id = ?",
+                [(pid,) for pid in produkt_ids],
             )
-        self.conn.execute("PRAGMA foreign_keys=ON")
 
-    def D6_delete_inventory_records(self, product_id: int) -> None:
+    def D6_delete_dostawa(self, dostawa_id: int) -> None:
         with self.conn:
-            self.conn.execute("DELETE FROM inventory WHERE product_id = ?", (product_id,))
+            self.conn.execute(
+                "DELETE FROM dostawy WHERE dostawa_id = ?", (dostawa_id,))

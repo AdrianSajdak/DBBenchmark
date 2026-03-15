@@ -1,0 +1,111 @@
+version: "3.9"
+
+# ────────────────────────────────────────────────────────────────
+# DBBenchmark – 4 kontenery, każdy obsługuje 3 rozmiary danych:
+#   small  (~500K rekordów)
+#   medium (~1M   rekordów)
+#   large  (~10M  rekordów)
+#
+# MySQL:      bazy sklep_small / sklep_medium / sklep_large
+# MySQL-Norm: bazy sklep_norm_small / sklep_norm_medium / sklep_norm_large
+# CouchDB:    bazy sklep_small / sklep_medium / sklep_large
+# Redis:      db=0 (small) / db=1 (medium) / db=2 (large)
+# SQLite:     pliki sklep_small.db / sklep_medium.db / sklep_large.db
+# ────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── MySQL podstawowy ──────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: bench_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: benchmark123
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --innodb-buffer-pool-size=1G
+      --innodb-log-file-size=256M
+      --max-connections=200
+      --bulk-insert-buffer-size=64M
+    # Bazy tworzone przez seed_all.py:
+    #   sklep_small, sklep_medium, sklep_large
+
+  # ── MySQL znormalizowany (3NF) ────────────────────────────────
+  mysql_normalized:
+    image: mysql:8.0
+    container_name: bench_mysql_norm
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: benchmark123
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_norm_data:/var/lib/mysql
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --innodb-buffer-pool-size=1G
+      --innodb-log-file-size=256M
+      --max-connections=200
+      --bulk-insert-buffer-size=64M
+    # Bazy tworzone przez seed_all.py:
+    #   sklep_norm_small, sklep_norm_medium, sklep_norm_large
+
+  # ── CouchDB ───────────────────────────────────────────────────
+  couchdb:
+    image: couchdb:3
+    container_name: bench_couchdb
+    restart: unless-stopped
+    environment:
+      COUCHDB_USER: admin
+      COUCHDB_PASSWORD: benchmark123
+    ports:
+      - "5984:5984"
+    volumes:
+      - couchdb_data:/opt/couchdb/data
+    # Bazy tworzone przez seed_all.py:
+    #   sklep_small, sklep_medium, sklep_large
+
+  # ── Redis ─────────────────────────────────────────────────────
+  # UWAGA: Redis przechowuje WSZYSTKIE dane w RAM.
+  # Szacowane zapotrzebowanie:
+  #   small  (~500K  rek.) →  ~1 GB
+  #   medium (~1M    rek.) →  ~2 GB
+  #   large  (~10M   rek.) →  ~10 GB  ← wymaga dużo RAM!
+  # Łącznie dla 3 db= (0,1,2): do ~13 GB
+  # Przy 32 GB RAM systemu: bezpieczne.
+  #
+  # Przypisanie db=:
+  #   db=0 → small
+  #   db=1 → medium
+  #   db=2 → large
+  redis:
+    image: redis:7-alpine
+    container_name: bench_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: >
+      redis-server
+      --maxmemory 14gb
+      --maxmemory-policy noeviction
+      --save ""
+      --databases 16
+    # --save "" wyłącza zapis RDB (szybciej, dane tymczasowe)
+    # --databases 16 – domyślne, db=0/1/2 w użyciu
+
+volumes:
+  mysql_data:
+  mysql_norm_data:
+  couchdb_data:
+  redis_data:

@@ -1,16 +1,12 @@
-"""Redis – implementacja scenariuszy CRUD (key-value + indeksy pomocnicze)."""
-import json
-import random
+"""Redis – implementacja CRUD dla modelu TABELE.txt (key-value + indeksy pomocnicze)."""
 from typing import Any, Dict, List, Optional
 
 import redis as redis_lib
 
 from db.base_db import BaseDB
 
-PIPELINE_BATCH = 500   # ile komend w jednym pipeline
-
-# Prefiks przestrzeni nazw
-NS = "lq:"   # liquor_store
+PIPELINE_BATCH = 500
+NS = "sb:"  # sklep_benchmark
 
 
 class RedisDB(BaseDB):
@@ -20,7 +16,7 @@ class RedisDB(BaseDB):
         self.cfg = config
         self.r: Optional[redis_lib.Redis] = None
 
-    # -------- Lifecycle --------
+    # ────────── Lifecycle ──────────
 
     def connect(self) -> bool:
         try:
@@ -42,100 +38,106 @@ class RedisDB(BaseDB):
             self.r.close()
 
     def setup_schema(self) -> None:
-        # Redis nie wymaga schematu – nie robimy nic
-        pass
+        pass  # Redis nie wymaga schematu
 
     def clear_data(self) -> None:
-        """Usuwa wszystkie klucze z prefiksu NS."""
-        keys = self.r.keys(f"{NS}*")
-        if keys:
-            pipe = self.r.pipeline(transaction=False)
-            for k in keys:
-                pipe.delete(k)
-            pipe.execute()
+        cursor = "0"
+        while cursor != 0:
+            cursor, keys = self.r.scan(cursor=cursor, match=f"{NS}*", count=1000)
+            if keys:
+                self.r.delete(*keys)
 
     def drop_schema(self) -> None:
         self.clear_data()
 
-    # -------- Konwencje kluczy --------
-    # Dane:
-    #   {NS}product:{id}              → HSET (wszystkie pola)
-    #   {NS}customer:{id}             → HSET
-    #   {NS}order:{id}                → HSET
-    #   {NS}order_item:{id}           → HSET
-    #   {NS}inventory:{prod_id}:{store_id} → HSET
-    #   {NS}supplier:{id}             → HSET
-    #   {NS}category:{id}             → HSET
-    #   {NS}employee:{id}             → HSET
-    #   {NS}store:{id}                → HSET
-    #   {NS}payment:{id}              → HSET
+    # ────────── Konwencje kluczy ──────────
+    # {NS}alkohol:{id}            HSET
+    # {NS}tyton:{id}              HSET
+    # {NS}kategoria:{id}          HSET
+    # {NS}producent:{id}          HSET
+    # {NS}pracownik:{id}          HSET
+    # {NS}klient:{id}             HSET
+    # {NS}paragon:{id}            HSET
+    # {NS}pozycja:{id}            HSET
+    # {NS}faktura:{id}            HSET
+    # {NS}dostawa:{id}            HSET
+    #
     # Indeksy:
-    #   {NS}idx:products              → SET  (product IDs)
-    #   {NS}idx:products:cat:{cat_id} → SET  (product IDs per category)
-    #   {NS}idx:products:price        → ZSET (score=price, member=product_id)
-    #   {NS}idx:customers             → SET  (customer IDs)
-    #   {NS}idx:orders                → SET  (order IDs)
-    #   {NS}idx:orders:cust:{cust_id} → SET  (order IDs per customer)
-    #   {NS}idx:order_items:order:{order_id} → SET (item IDs)
-    #   {NS}idx:inventory             → SET  ("{prod_id}:{store_id}")
-    #   {NS}idx:suppliers             → SET  (supplier IDs)
-    # Liczniki:
-    #   {NS}cnt:product, cnt:customer, cnt:order, cnt:order_item, cnt:inventory
+    # {NS}idx:alk:kat:{kat_id}    SET (produkt_id)
+    # {NS}idx:alk:cena            ZSET (score=cena, member=produkt_id)
+    # {NS}idx:tyt:kat:{kat_id}    SET (produkt_id)
+    # {NS}idx:par:klient:{kl_id}  SET (paragon_id)
+    # {NS}idx:poz:paragon:{p_id}  SET (pozycja_id)
+    # {NS}idx:fak:data             ZSET (score=data_yyyymmdd, member=faktura_id)
+    # {NS}idx:dos:producent:{p_id} SET (dostawa_id)
 
     def _pk(self, entity: str, eid) -> str:
         return f"{NS}{entity}:{eid}"
 
-    def _set_entity(self, pipe, entity: str, eid, data: Dict) -> None:
+    def _hset(self, pipe, entity: str, eid, data: Dict) -> None:
         key = self._pk(entity, eid)
-        # Przechowuj wszystkie pola jako JSON w jednym polu "data"
-        # (HSET z wieloma polami jest wydajniejszy, ale wymaga str konwersji)
         pipe.hset(key, mapping={k: str(v) if v is not None else "" for k, v in data.items()})
 
-    def _get_entity(self, entity: str, eid) -> Optional[Dict]:
-        key = self._pk(entity, eid)
-        data = self.r.hgetall(key)
+    def _hgetall(self, entity: str, eid) -> Optional[Dict]:
+        data = self.r.hgetall(self._pk(entity, eid))
         return data if data else None
 
-    # -------- Seeding --------
+    # ────────── Indeksy ──────────
+
+    def create_indexes(self) -> None:
+        # Indeksy budowane są przy seedzie, ta metoda jest no-op dla Redis
+        pass
+
+    def drop_indexes(self) -> None:
+        # Usuwanie zbiorów indeksowych
+        cursor = "0"
+        while cursor != 0:
+            cursor, keys = self.r.scan(cursor=cursor, match=f"{NS}idx:*", count=1000)
+            if keys:
+                self.r.delete(*keys)
+
+    # ────────── Seeding ──────────
+
+    _TABLE_MAP = {
+        "kategorie_produktow": ("kategoria", "kategoria_id"),
+        "producenci":          ("producent",  "producent_id"),
+        "pracownicy":          ("pracownik",  "pracownik_id"),
+        "klienci":             ("klient",     "klient_id"),
+        "alkohol":             ("alkohol",    "produkt_id"),
+        "tyton":               ("tyton",      "produkt_id"),
+        "paragony":            ("paragon",    "paragon_id"),
+        "pozycje_paragonu":    ("pozycja",    "pozycja_id"),
+        "faktury":             ("faktura",    "faktura_id"),
+        "dostawy":             ("dostawa",    "dostawa_id"),
+    }
 
     def _seed_table(self, table: str, rows: List[Dict]) -> None:
+        entity, pk = self._TABLE_MAP[table]
         pipe = self.r.pipeline(transaction=False)
         chunk = 0
         for row in rows:
-            pid_map = {
-                "stores":      ("store",      "store_id"),
-                "categories":  ("category",   "category_id"),
-                "suppliers":   ("supplier",   "supplier_id"),
-                "employees":   ("employee",   "employee_id"),
-                "customers":   ("customer",   "customer_id"),
-                "products":    ("product",    "product_id"),
-                "orders":      ("order",      "order_id"),
-                "order_items": ("order_item", "order_item_id"),
-                "inventory":   ("inv",        "inventory_id"),
-                "payments":    ("payment",    "payment_id"),
-            }
-            entity, pk_field = pid_map[table]
-            eid = row[pk_field]
+            eid = row[pk]
+            self._hset(pipe, entity, eid, row)
 
-            self._set_entity(pipe, entity, eid, row)
-
-            # Indeksy
-            if table == "products":
-                pipe.sadd(f"{NS}idx:products", eid)
-                pipe.sadd(f"{NS}idx:products:cat:{row['category_id']}", eid)
-                pipe.zadd(f"{NS}idx:products:price", {str(eid): float(row["price"])})
-            elif table == "customers":
-                pipe.sadd(f"{NS}idx:customers", eid)
-            elif table == "orders":
-                pipe.sadd(f"{NS}idx:orders", eid)
-                pipe.sadd(f"{NS}idx:orders:cust:{row['customer_id']}", eid)
-            elif table == "order_items":
-                pipe.sadd(f"{NS}idx:order_items:order:{row['order_id']}", eid)
-            elif table == "inventory":
-                inv_key = f"{row['product_id']}:{row['store_id']}"
-                pipe.sadd(f"{NS}idx:inventory", inv_key)
-            elif table == "suppliers":
-                pipe.sadd(f"{NS}idx:suppliers", eid)
+            # Buduj indeksy pomocnicze
+            if table == "alkohol":
+                pipe.sadd(f"{NS}idx:alk:kat:{row['kategoria_id']}", eid)
+                pipe.zadd(f"{NS}idx:alk:cena", {str(eid): float(row["cena_producenta"])})
+            elif table == "tyton":
+                pipe.sadd(f"{NS}idx:tyt:kat:{row['kategoria_id']}", eid)
+            elif table == "paragony":
+                pipe.sadd(f"{NS}idx:par:klient:{row['klient_id']}", eid)
+            elif table == "pozycje_paragonu":
+                pipe.sadd(f"{NS}idx:poz:paragon:{row['paragon_id']}", eid)
+            elif table == "faktury":
+                dw = str(row.get("data_wystawienia", "2024-01-01")).replace("-", "")
+                try:
+                    score = int(dw)
+                except ValueError:
+                    score = 20240101
+                pipe.zadd(f"{NS}idx:fak:data", {str(eid): score})
+            elif table == "dostawy":
+                pipe.sadd(f"{NS}idx:dos:producent:{row['producent_id']}", eid)
 
             chunk += 1
             if chunk >= PIPELINE_BATCH:
@@ -146,240 +148,211 @@ class RedisDB(BaseDB):
             pipe.execute()
 
     def seed(self, data: Dict[str, List[Dict]], progress_callback=None) -> None:
+        from config import SEED_ORDER
         cb = progress_callback or (lambda t, d, tot: None)
-        order = ["stores", "categories", "suppliers", "employees",
-                 "customers", "products", "orders", "order_items",
-                 "inventory", "payments"]
         total = sum(len(v) for v in data.values())
-        for table in order:
+        for table in SEED_ORDER:
             rows = data.get(table, [])
             cb(table, len(rows), total)
             self._seed_table(table, rows)
 
-    # ===================== CREATE =====================
+    # ==================== CREATE ====================
 
-    def C1_add_single_product(self, product: Dict) -> None:
+    def C1_add_single_alkohol(self, product: Dict) -> None:
         pipe = self.r.pipeline()
-        eid = product["product_id"]
-        self._set_entity(pipe, "product", eid, product)
-        pipe.sadd(f"{NS}idx:products", eid)
-        pipe.sadd(f"{NS}idx:products:cat:{product['category_id']}", eid)
-        pipe.zadd(f"{NS}idx:products:price", {str(eid): float(product["price"])})
+        eid = product["produkt_id"]
+        self._hset(pipe, "alkohol", eid, product)
+        pipe.sadd(f"{NS}idx:alk:kat:{product['kategoria_id']}", eid)
+        pipe.zadd(f"{NS}idx:alk:cena", {str(eid): float(product["cena_producenta"])})
         pipe.execute()
 
-    def C2_add_bulk_products(self, products: List[Dict]) -> None:
+    def C2_add_bulk_alkohol(self, products: List[Dict]) -> None:
         pipe = self.r.pipeline(transaction=False)
-        for i, product in enumerate(products):
-            eid = product["product_id"]
-            self._set_entity(pipe, "product", eid, product)
-            pipe.sadd(f"{NS}idx:products", eid)
-            pipe.sadd(f"{NS}idx:products:cat:{product['category_id']}", eid)
-            pipe.zadd(f"{NS}idx:products:price", {str(eid): float(product["price"])})
+        for i, p in enumerate(products):
+            eid = p["produkt_id"]
+            self._hset(pipe, "alkohol", eid, p)
+            pipe.sadd(f"{NS}idx:alk:kat:{p['kategoria_id']}", eid)
+            pipe.zadd(f"{NS}idx:alk:cena", {str(eid): float(p["cena_producenta"])})
             if (i + 1) % PIPELINE_BATCH == 0:
                 pipe.execute()
                 pipe = self.r.pipeline(transaction=False)
         pipe.execute()
 
-    def C3_add_customer(self, customer: Dict) -> None:
+    def C3_add_klient(self, klient: Dict) -> None:
         pipe = self.r.pipeline()
-        eid = customer["customer_id"]
-        self._set_entity(pipe, "customer", eid, customer)
-        pipe.sadd(f"{NS}idx:customers", eid)
+        eid = klient["klient_id"]
+        self._hset(pipe, "klient", eid, klient)
         pipe.execute()
 
-    def C4_add_order(self, order: Dict) -> None:
+    def C4_add_paragon(self, paragon: Dict) -> None:
         pipe = self.r.pipeline()
-        eid = order["order_id"]
-        self._set_entity(pipe, "order", eid, order)
-        pipe.sadd(f"{NS}idx:orders", eid)
-        pipe.sadd(f"{NS}idx:orders:cust:{order['customer_id']}", eid)
+        eid = paragon["paragon_id"]
+        self._hset(pipe, "paragon", eid, paragon)
+        pipe.sadd(f"{NS}idx:par:klient:{paragon['klient_id']}", eid)
         pipe.execute()
 
-    def C5_add_order_items(self, items: List[Dict]) -> None:
+    def C5_add_pozycje_paragonu(self, pozycje: List[Dict]) -> None:
         pipe = self.r.pipeline(transaction=False)
-        for i, item in enumerate(items):
-            eid = item["order_item_id"]
-            self._set_entity(pipe, "order_item", eid, item)
-            pipe.sadd(f"{NS}idx:order_items:order:{item['order_id']}", eid)
+        for i, poz in enumerate(pozycje):
+            eid = poz["pozycja_id"]
+            self._hset(pipe, "pozycja", eid, poz)
+            pipe.sadd(f"{NS}idx:poz:paragon:{poz['paragon_id']}", eid)
             if (i + 1) % PIPELINE_BATCH == 0:
                 pipe.execute()
                 pipe = self.r.pipeline(transaction=False)
         pipe.execute()
 
-    def C6_add_inventory_records(self, records: List[Dict]) -> None:
-        pipe = self.r.pipeline(transaction=False)
-        for i, rec in enumerate(records):
-            eid = rec["inventory_id"]
-            self._set_entity(pipe, "inv", eid, rec)
-            inv_key = f"{rec['product_id']}:{rec['store_id']}"
-            pipe.sadd(f"{NS}idx:inventory", inv_key)
-            if (i + 1) % PIPELINE_BATCH == 0:
-                pipe.execute()
-                pipe = self.r.pipeline(transaction=False)
+    def C6_add_faktura(self, faktura: Dict) -> None:
+        pipe = self.r.pipeline()
+        eid = faktura["faktura_id"]
+        self._hset(pipe, "faktura", eid, faktura)
+        dw = str(faktura.get("data_wystawienia", "2024-01-01")).replace("-", "")
+        try:
+            score = int(dw)
+        except ValueError:
+            score = 20240101
+        pipe.zadd(f"{NS}idx:fak:data", {str(eid): score})
         pipe.execute()
 
-    # ===================== READ =====================
+    # ==================== READ ====================
 
-    def R1_get_product_by_id(self, product_id: int) -> Any:
-        return self._get_entity("product", product_id)
+    def R1_get_alkohol_by_id(self, produkt_id: int) -> Any:
+        return self._hgetall("alkohol", produkt_id)
 
-    def R2_get_products_by_category(self, category_id: int) -> List:
-        ids = self.r.smembers(f"{NS}idx:products:cat:{category_id}")
+    def R2_get_products_by_kategoria(self, kategoria_id: int) -> List:
+        ids = self.r.smembers(f"{NS}idx:alk:kat:{kategoria_id}")
+        if not ids:
+            return []
         pipe = self.r.pipeline(transaction=False)
         for pid in ids:
-            pipe.hgetall(f"{NS}product:{pid}")
+            pipe.hgetall(f"{NS}alkohol:{pid}")
         return [d for d in pipe.execute() if d]
 
-    def R3_get_customer_orders(self, customer_id: int) -> List:
-        ids = self.r.smembers(f"{NS}idx:orders:cust:{customer_id}")
+    def R3_get_paragony_klienta(self, klient_id: int) -> List:
+        ids = self.r.smembers(f"{NS}idx:par:klient:{klient_id}")
+        if not ids:
+            return []
         pipe = self.r.pipeline(transaction=False)
-        for oid in ids:
-            pipe.hgetall(f"{NS}order:{oid}")
+        for pid in ids:
+            pipe.hgetall(f"{NS}paragon:{pid}")
         return [d for d in pipe.execute() if d]
 
-    def R4_get_order_details(self, order_id: int) -> Any:
-        order = self._get_entity("order", order_id)
-        item_ids = self.r.smembers(f"{NS}idx:order_items:order:{order_id}")
-        pipe = self.r.pipeline(transaction=False)
-        for iid in item_ids:
-            pipe.hgetall(f"{NS}order_item:{iid}")
-        items = [d for d in pipe.execute() if d]
-        # Dołącz nazwę produktu (aplikacyjny JOIN)
-        pipe2 = self.r.pipeline(transaction=False)
-        for item in items:
-            pid = item.get("product_id", "")
-            pipe2.hget(f"{NS}product:{pid}", "name")
-        names = pipe2.execute()
-        for item, name in zip(items, names):
-            item["product_name"] = name
-        return {"order": order, "items": items}
+    def R4_get_paragon_details(self, paragon_id: int) -> Any:
+        paragon = self._hgetall("paragon", paragon_id)
+        poz_ids = self.r.smembers(f"{NS}idx:poz:paragon:{paragon_id}")
+        pozycje = []
+        if poz_ids:
+            pipe = self.r.pipeline(transaction=False)
+            for pid in poz_ids:
+                pipe.hgetall(f"{NS}pozycja:{pid}")
+            pozycje = [d for d in pipe.execute() if d]
+        return {"paragon": paragon, "pozycje": pozycje}
 
-    def R5_get_top_expensive_products(self, limit: int = 10) -> List:
-        # ZREVRANGE zwraca produkty od najdroższego
+    def R5_get_top_expensive_alkohol(self, limit: int = 10) -> List:
         entries = self.r.zrevrange(
-            f"{NS}idx:products:price", 0, limit - 1, withscores=True
-        )
+            f"{NS}idx:alk:cena", 0, limit - 1, withscores=True)
+        if not entries:
+            return []
         pipe = self.r.pipeline(transaction=False)
         for pid, _ in entries:
-            pipe.hgetall(f"{NS}product:{pid}")
+            pipe.hgetall(f"{NS}alkohol:{pid}")
         return [d for d in pipe.execute() if d]
 
-    def R6_get_inventory(self) -> List:
-        keys = self.r.smembers(f"{NS}idx:inventory")
-        results = []
-        # Wyszukaj przez inventory_id (stored w HSET)
-        # Iteruj po wszystkich kluczach inv:*
-        all_keys = self.r.keys(f"{NS}inv:*")
+    def R6_get_faktury_by_okres(self, data_od: str, data_do: str) -> List:
+        score_od = int(data_od.replace("-", ""))
+        score_do = int(data_do.replace("-", ""))
+        ids = self.r.zrangebyscore(f"{NS}idx:fak:data", score_od, score_do)
+        if not ids:
+            return []
         pipe = self.r.pipeline(transaction=False)
-        for k in all_keys:
-            pipe.hgetall(k)
+        for fid in ids:
+            pipe.hgetall(f"{NS}faktura:{fid}")
         return [d for d in pipe.execute() if d]
 
-    # ===================== UPDATE =====================
+    # ==================== UPDATE ====================
 
-    def U1_update_product_price(self, product_id: int, new_price: float) -> None:
-        key = self._pk("product", product_id)
+    def U1_update_cena_alkohol(self, produkt_id: int, nowa_cena: float) -> None:
         pipe = self.r.pipeline()
-        pipe.hset(key, "price", str(new_price))
-        pipe.zadd(f"{NS}idx:products:price", {str(product_id): new_price})
+        pipe.hset(self._pk("alkohol", produkt_id), "cena_producenta", str(nowa_cena))
+        pipe.zadd(f"{NS}idx:alk:cena", {str(produkt_id): nowa_cena})
         pipe.execute()
 
-    def U2_update_customer(self, customer_id: int, data: Dict) -> None:
-        key = self._pk("customer", customer_id)
-        self.r.hset(key, mapping={k: str(v) for k, v in data.items()})
+    def U2_update_klient(self, klient_id: int, data: Dict) -> None:
+        key = self._pk("klient", klient_id)
+        self.r.hset(key, mapping={
+            "email": data["email"],
+            "telefon": data["telefon"],
+        })
 
-    def U3_update_inventory(self, product_id: int, store_id: int, qty: int) -> None:
-        from datetime import date
-        # Znajdź klucz inventory dla tego produktu i sklepu
-        all_keys = self.r.keys(f"{NS}inv:*")
-        pipe = self.r.pipeline(transaction=False)
-        for k in all_keys:
-            pipe.hgetall(k)
-        all_inv = pipe.execute()
-        for inv_data, k in zip(all_inv, all_keys):
-            if (inv_data.get("product_id") == str(product_id) and
-                    inv_data.get("store_id") == str(store_id)):
-                self.r.hset(k, mapping={"quantity": str(qty),
-                                        "last_update": str(date.today())})
-                break
+    def U3_update_status_paragonu(self, paragon_id: int, status: str) -> None:
+        self.r.hset(self._pk("paragon", paragon_id), "status_transakcji", status)
 
-    def U4_bulk_update_product_prices(self, category_id: int, discount_pct: float) -> None:
-        ids = self.r.smembers(f"{NS}idx:products:cat:{category_id}")
-        factor = 1 - discount_pct / 100
+    def U4_bulk_update_ceny_kategoria(self, kategoria_id: int,
+                                       rabat_pct: float) -> None:
+        ids = self.r.smembers(f"{NS}idx:alk:kat:{kategoria_id}")
+        factor = 1 - rabat_pct / 100
         pipe = self.r.pipeline(transaction=False)
         for pid in ids:
-            key = self._pk("product", pid)
-            old_price = self.r.hget(key, "price")
-            if old_price:
-                new_price = round(float(old_price) * factor, 2)
-                pipe.hset(key, "price", str(new_price))
-                pipe.zadd(f"{NS}idx:products:price", {str(pid): new_price})
+            key = self._pk("alkohol", pid)
+            old = self.r.hget(key, "cena_producenta")
+            if old:
+                new_price = round(float(old) * factor, 2)
+                pipe.hset(key, "cena_producenta", str(new_price))
+                pipe.zadd(f"{NS}idx:alk:cena", {str(pid): new_price})
         pipe.execute()
 
-    def U5_update_order_status(self, order_id: int, status: str) -> None:
-        self.r.hset(self._pk("order", order_id), "status", status)
+    def U5_update_status_dostawy(self, dostawa_id: int, status: str) -> None:
+        self.r.hset(self._pk("dostawa", dostawa_id), "status_dostawy", status)
 
-    def U6_update_supplier(self, supplier_id: int, data: Dict) -> None:
-        key = self._pk("supplier", supplier_id)
-        self.r.hset(key, mapping={k: str(v) for k, v in data.items()})
+    def U6_update_producent(self, producent_id: int, data: Dict) -> None:
+        key = self._pk("producent", producent_id)
+        self.r.hset(key, mapping={
+            "nazwa": data["nazwa"],
+            "strona_www": data["strona_www"],
+        })
 
-    # ===================== DELETE =====================
+    # ==================== DELETE ====================
 
-    def D1_delete_product(self, product_id: int) -> None:
-        cat = self.r.hget(self._pk("product", product_id), "category_id")
-        price = self.r.hget(self._pk("product", product_id), "price")
+    def D1_delete_alkohol(self, produkt_id: int) -> None:
+        key = self._pk("alkohol", produkt_id)
+        kat = self.r.hget(key, "kategoria_id")
         pipe = self.r.pipeline()
-        pipe.delete(self._pk("product", product_id))
-        pipe.srem(f"{NS}idx:products", product_id)
-        if cat:
-            pipe.srem(f"{NS}idx:products:cat:{cat}", product_id)
-        if price:
-            pipe.zrem(f"{NS}idx:products:price", str(product_id))
+        pipe.delete(key)
+        if kat:
+            pipe.srem(f"{NS}idx:alk:kat:{kat}", produkt_id)
+        pipe.zrem(f"{NS}idx:alk:cena", str(produkt_id))
         pipe.execute()
 
-    def D2_delete_customer(self, customer_id: int) -> None:
+    def D2_delete_klient(self, klient_id: int) -> None:
+        self.r.delete(self._pk("klient", klient_id))
+
+    def D3_delete_paragon(self, paragon_id: int) -> None:
+        # Kaskadowe usunięcie pozycji
+        poz_ids = self.r.smembers(f"{NS}idx:poz:paragon:{paragon_id}")
         pipe = self.r.pipeline()
-        pipe.delete(self._pk("customer", customer_id))
-        pipe.srem(f"{NS}idx:customers", customer_id)
+        for pid in poz_ids:
+            pipe.delete(self._pk("pozycja", pid))
+        pipe.delete(f"{NS}idx:poz:paragon:{paragon_id}")
+        pipe.delete(self._pk("paragon", paragon_id))
         pipe.execute()
 
-    def D3_delete_order(self, order_id: int) -> None:
+    def D4_delete_pozycje_paragonu(self, paragon_id: int) -> None:
+        poz_ids = self.r.smembers(f"{NS}idx:poz:paragon:{paragon_id}")
         pipe = self.r.pipeline()
-        pipe.delete(self._pk("order", order_id))
-        pipe.srem(f"{NS}idx:orders", order_id)
-        # Usuń powiązane pozycje
-        item_ids = self.r.smembers(f"{NS}idx:order_items:order:{order_id}")
-        for iid in item_ids:
-            pipe.delete(self._pk("order_item", iid))
-        pipe.delete(f"{NS}idx:order_items:order:{order_id}")
+        for pid in poz_ids:
+            pipe.delete(self._pk("pozycja", pid))
+        pipe.delete(f"{NS}idx:poz:paragon:{paragon_id}")
         pipe.execute()
 
-    def D4_delete_order_items(self, order_id: int) -> None:
-        item_ids = self.r.smembers(f"{NS}idx:order_items:order:{order_id}")
-        pipe = self.r.pipeline()
-        for iid in item_ids:
-            pipe.delete(self._pk("order_item", iid))
-        pipe.delete(f"{NS}idx:order_items:order:{order_id}")
-        pipe.execute()
-
-    def D5_bulk_delete_products(self, product_ids: List[int]) -> None:
+    def D5_bulk_delete_tyton(self, produkt_ids: List[int]) -> None:
         pipe = self.r.pipeline(transaction=False)
-        for pid in product_ids:
-            cat = self.r.hget(self._pk("product", pid), "category_id")
-            pipe.delete(self._pk("product", pid))
-            pipe.srem(f"{NS}idx:products", pid)
-            if cat:
-                pipe.srem(f"{NS}idx:products:cat:{cat}", pid)
-            pipe.zrem(f"{NS}idx:products:price", str(pid))
+        for pid in produkt_ids:
+            key = self._pk("tyton", pid)
+            kat = self.r.hget(key, "kategoria_id")
+            pipe.delete(key)
+            if kat:
+                pipe.srem(f"{NS}idx:tyt:kat:{kat}", pid)
         pipe.execute()
 
-    def D6_delete_inventory_records(self, product_id: int) -> None:
-        all_keys = self.r.keys(f"{NS}inv:*")
-        pipe = self.r.pipeline(transaction=False)
-        for k in all_keys:
-            inv = self.r.hgetall(k)
-            if inv.get("product_id") == str(product_id):
-                pipe.delete(k)
-                store_id = inv.get("store_id", "")
-                pipe.srem(f"{NS}idx:inventory", f"{product_id}:{store_id}")
-        pipe.execute()
+    def D6_delete_dostawa(self, dostawa_id: int) -> None:
+        self.r.delete(self._pk("dostawa", dostawa_id))

@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DBBenchmark – Panel sterowania</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 2rem;
+      font-weight: 700;
+      color: #7c3aed;
+      margin-bottom: .25rem;
+    }
+    .subtitle {
+      text-align: center;
+      color: #94a3b8;
+      margin-bottom: 2.5rem;
+      font-size: .9rem;
+    }
+
+    .container { max-width: 1100px; margin: 0 auto; }
+
+    /* ── Karta ── */
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .card h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #a78bfa;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid #334155;
+      padding-bottom: .5rem;
+    }
+
+    /* ── Formularz ── */
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto auto;
+      gap: 1rem;
+      align-items: end;
+    }
+    @media (max-width: 700px) {
+      .form-grid { grid-template-columns: 1fr; }
+    }
+
+    label { display: block; font-size: .8rem; color: #94a3b8; margin-bottom: .3rem; }
+
+    select, input[type=number] {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid #475569;
+      border-radius: 8px;
+      color: #e2e8f0;
+      padding: .5rem .75rem;
+      font-size: .95rem;
+    }
+    select:focus, input:focus { outline: 2px solid #7c3aed; border-color: transparent; }
+
+    /* ── Checkboxy baz ── */
+    .db-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+      margin-bottom: 1rem;
+    }
+    .db-chip {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      background: #0f172a;
+      border: 1px solid #475569;
+      border-radius: 20px;
+      padding: .35rem .8rem;
+      cursor: pointer;
+      user-select: none;
+      font-size: .85rem;
+      transition: border-color .15s, background .15s;
+    }
+    .db-chip input[type=checkbox] { accent-color: #7c3aed; cursor: pointer; }
+    .db-chip:has(input:checked) {
+      border-color: #7c3aed;
+      background: #1e1b4b;
+    }
+
+    /* ── Scenariusze ── */
+    .scenario-tabs {
+      display: flex;
+      gap: .5rem;
+      margin-bottom .75rem;
+      flex-wrap: wrap;
+    }
+    .tab-btn {
+      background: #0f172a;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      color: #94a3b8;
+      padding: .3rem .8rem;
+      cursor: pointer;
+      font-size: .85rem;
+      transition: all .15s;
+    }
+    .tab-btn.active, .tab-btn:hover { border-color: #7c3aed; color: #a78bfa; background: #1e1b4b; }
+
+    .scenario-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: .5rem;
+      max-height: 260px;
+      overflow-y: auto;
+    }
+    .scenario-item {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: .5rem .75rem;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .scenario-item:hover { border-color: #7c3aed; background: #1e1b4b; }
+    .scenario-item.selected { border-color: #7c3aed; background: #1e1b4b; }
+    .scenario-item .sid {
+      font-weight: 700;
+      font-size: .95rem;
+      margin-bottom: .1rem;
+    }
+    .sid.C { color: #34d399; }
+    .sid.R { color: #60a5fa; }
+    .sid.U { color: #fbbf24; }
+    .sid.D { color: #f87171; }
+    .scenario-item .sdesc { font-size: .75rem; color: #94a3b8; }
+
+    /* ── Przyciski ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      padding: .55rem 1.2rem;
+      border-radius: 8px;
+      font-size: .95rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity .15s, transform .1s;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn-primary { background: #7c3aed; color: white; }
+    .btn-primary:hover { opacity: .85; }
+    .btn-secondary { background: #334155; color: #e2e8f0; }
+    .btn-secondary:hover { opacity: .85; }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ── Wyniki ── */
+    #results-area .spinner {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      color: #94a3b8;
+      padding: 1rem 0;
+    }
+    .spin-icon {
+      width: 20px; height: 20px;
+      border: 2px solid #334155;
+      border-top-color: #7c3aed;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .result-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .9rem;
+    }
+    .result-table th {
+      background: #0f172a;
+      color: #94a3b8;
+      padding: .5rem .75rem;
+      text-align: left;
+      font-weight: 600;
+      font-size: .8rem;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      border-bottom: 1px solid #334155;
+    }
+    .result-table td {
+      padding: .5rem .75rem;
+      border-bottom: 1px solid #1e293b;
+    }
+    .result-table tr:hover td { background: #1e293b; }
+    .result-table td.time { font-family: monospace; color: #34d399; }
+    .result-table td.error { color: #f87171; }
+    .result-table td.db-name { font-weight: 600; }
+
+    .bar-wrap { background: #0f172a; border-radius: 4px; height: 10px; min-width: 60px; }
+    .bar-fill { background: #7c3aed; border-radius: 4px; height: 10px; transition: width .4s; }
+
+    /* ── Status strip ── */
+    .status-strip {
+      padding: .5rem 1rem;
+      border-radius: 8px;
+      font-size: .85rem;
+      margin-bottom: 1rem;
+    }
+    .status-ok   { background: #052e16; border: 1px solid #16a34a; color: #4ade80; }
+    .status-err  { background: #450a0a; border: 1px solid #b91c1c; color: #f87171; }
+    .status-info { background: #0c1a35; border: 1px solid #1d4ed8; color: #93c5fd; }
+
+    /* ── Historia ── */
+    #history-list { max-height: 280px; overflow-y: auto; }
+    .hist-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: .4rem .75rem;
+      border-radius: 6px;
+      font-size: .85rem;
+      border-bottom: 1px solid #1e293b;
+    }
+    .hist-item:hover { background: #1e293b; }
+    .hist-time { font-family: monospace; color: #34d399; font-size: .8rem; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>🗄 DBBenchmark</h1>
+  <p class="subtitle">Interaktywny panel uruchamiania scenariuszy CRUD na 5 bazach danych</p>
+
+  <!-- ── Konfiguracja ── -->
+  <div class="card">
+    <h2>⚙️ Konfiguracja testu</h2>
+
+    <!-- Wybór baz -->
+    <label style="margin-bottom:.5rem;display:block">Bazy danych:</label>
+    <div class="db-grid" id="db-chips"></div>
+
+    <!-- Rozmiar datasetu + liczba powtórzeń -->
+    <div style="display:flex;align-items:center;gap:1.5rem;margin-bottom:1rem;flex-wrap:wrap">
+      <div>
+        <label>Rozmiar danych:</label>
+        <select id="size-select" style="width:180px">
+          <option value="small">Small (~500K)</option>
+          <option value="medium">Medium (~1M)</option>
+          <option value="large">Large (~10M)</option>
+        </select>
+      </div>
+      <div>
+        <label>Powtórzenia (1–10):</label>
+        <input type="number" id="reps" value="3" min="1" max="10" style="width:80px" />
+      </div>
+      <div style="flex:1"></div>
+      <button class="btn btn-primary" id="run-btn" onclick="runTest()">
+        ▶ Uruchom scenariusz
+      </button>
+      <button class="btn btn-secondary" onclick="runAllSelected()">
+        ⚡ Uruchom na wszystkich
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Wybór scenariusza ── -->
+  <div class="card">
+    <h2>📋 Wybór scenariusza</h2>
+    <div class="scenario-tabs" id="op-tabs">
+      <button class="tab-btn active" onclick="filterScenarios('ALL', this)">Wszystkie</button>
+      <button class="tab-btn" onclick="filterScenarios('C', this)">CREATE</button>
+      <button class="tab-btn" onclick="filterScenarios('R', this)">READ</button>
+      <button class="tab-btn" onclick="filterScenarios('U', this)">UPDATE</button>
+      <button class="tab-btn" onclick="filterScenarios('D', this)">DELETE</button>
+    </div>
+    <div class="scenario-list" id="scenario-list"></div>
+  </div>
+
+  <!-- ── Wyniki ── -->
+  <div class="card">
+    <h2>📊 Wyniki</h2>
+    <div id="results-area">
+      <p style="color:#475569;font-size:.9rem">Wybierz scenariusz i naciśnij „Uruchom".</p>
+    </div>
+  </div>
+
+  <!-- ── Historia ── -->
+  <div class="card">
+    <h2>🕐 Historia testów</h2>
+    <div id="history-list">
+      <p style="color:#475569;font-size:.85rem;padding:.5rem">Brak historii.</p>
+    </div>
+    <button class="btn btn-secondary" style="margin-top:.5rem;font-size:.8rem"
+            onclick="clearHistory()">Wyczyść historię</button>
+  </div>
+</div>
+
+<script>
+// ── Stan globalny ──
+let allScenarios = [];
+let selectedScenario = null;
+let currentFilter = 'ALL';
+const history = [];
+
+const DB_KEYS = ['sqlite','mysql','mysql-norm','couchdb','redis'];
+const DB_LABELS = {
+  'sqlite':     'SQLite',
+  'mysql':      'MySQL',
+  'mysql-norm': 'MySQL-Norm',
+  'couchdb':    'CouchDB',
+  'redis':      'Redis',
+};
+
+// ── Init ──
+async function init() {
+  // Buduj chipy baz
+  const dbGrid = document.getElementById('db-chips');
+  for (const key of DB_KEYS) {
+    const label = DB_LABELS[key];
+    const chip = document.createElement('label');
+    chip.className = 'db-chip';
+    chip.innerHTML = `<input type="checkbox" name="db" value="${key}" ${key==='sqlite'?'checked':''}> ${label}`;
+    dbGrid.appendChild(chip);
+  }
+
+  // Pobierz scenariusze
+  try {
+    const res = await fetch('/api/scenarios');
+    const data = await res.json();
+    allScenarios = data.scenarios;
+    renderScenarios('ALL');
+  } catch(e) {
+    console.error('Błąd pobierania scenariuszy:', e);
+  }
+}
+
+// ── Scenariusze ──
+function renderScenarios(filter) {
+  const list = document.getElementById('scenario-list');
+  list.innerHTML = '';
+  const filtered = filter === 'ALL' ? allScenarios
+    : allScenarios.filter(s => s.operation === filter);
+
+  for (const s of filtered) {
+    const item = document.createElement('div');
+    item.className = 'scenario-item' + (selectedScenario === s.id ? ' selected' : '');
+    item.innerHTML = `<div class="sid ${s.operation}">${s.id}</div>
+                      <div class="sdesc">${s.description}</div>`;
+    item.onclick = () => selectScenario(s.id, item);
+    list.appendChild(item);
+  }
+}
+
+function selectScenario(id, el) {
+  selectedScenario = id;
+  document.querySelectorAll('.scenario-item').forEach(e => e.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function filterScenarios(filter, btn) {
+  currentFilter = filter;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderScenarios(filter);
+}
+
+// ── Pobierz wybrane bazy ──
+function getSelectedDbs() {
+  return [...document.querySelectorAll('input[name=db]:checked')].map(i => i.value);
+}
+
+// ── Uruchom test ──
+async function runTest() {
+  if (!selectedScenario) {
+    showStatus('Najpierw wybierz scenariusz.', 'info');
+    return;
+  }
+  const dbs = getSelectedDbs();
+  if (dbs.length === 0) {
+    showStatus('Wybierz co najmniej jedną bazę danych.', 'err');
+    return;
+  }
+
+  const reps = parseInt(document.getElementById('reps').value) || 3;
+  const size = document.getElementById('size-select').value;
+  setLoading(true);
+  showSpinner(`Uruchamianie ${selectedScenario} × ${reps} [${size}] na ${dbs.join(', ')}...`);
+
+  try {
+    const res = await fetch('/api/run_multi', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({scenario: selectedScenario, dbs, reps, size}),
+    });
+    const data = await res.json();
+    if (data.error) {
+      showStatus(`Błąd: ${data.error}`, 'err');
+    } else {
+      renderResults(data);
+      addToHistory(data);
+    }
+  } catch(e) {
+    showStatus(`Błąd połączenia: ${e}`, 'err');
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function runAllSelected() {
+  if (!selectedScenario) {
+    showStatus('Najpierw wybierz scenariusz.', 'info');
+    return;
+  }
+  // Zaznacz wszystkie
+  document.querySelectorAll('input[name=db]').forEach(i => i.checked = true);
+  await runTest();
+}
+
+// ── Renderowanie wyników ──
+function renderResults(data) {
+  const area = document.getElementById('results-area');
+  const results = data.results || [];
+  const scenario = data.scenario_id;
+  const desc = data.description;
+  const reps = data.repetitions;
+
+  // Znajdź max avg do pasków
+  const maxAvg = Math.max(...results.filter(r => r.avg_s != null).map(r => r.avg_s), 0.001);
+
+  let html = `
+    <div class="status-strip status-ok" style="margin-bottom:.75rem">
+      ✓ Scenariusz <strong>${scenario}</strong> – ${desc} &nbsp;|&nbsp; ${reps} powtórzenie(a)
+    </div>
+    <table class="result-table">
+      <thead>
+        <tr>
+          <th>Baza danych</th>
+          <th>Avg (s)</th>
+          <th>Min (s)</th>
+          <th>Max (s)</th>
+          <th>Wykres względny</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+  for (const r of results) {
+    const ok = r.status === 'ok' && r.avg_s != null;
+    const pct = ok ? Math.round((r.avg_s / maxAvg) * 100) : 0;
+    html += `
+      <tr>
+        <td class="db-name">${DB_LABELS[r.db] || r.db}</td>
+        <td class="${ok ? 'time' : 'error'}">${ok ? r.avg_s.toFixed(6) : (r.error || 'BŁĄD')}</td>
+        <td class="${ok ? 'time' : ''}">${ok ? r.min_s.toFixed(6) : '-'}</td>
+        <td class="${ok ? 'time' : ''}">${ok ? r.max_s.toFixed(6) : '-'}</td>
+        <td>
+          ${ok ? `<div class="bar-wrap"><div class="bar-fill" style="width:${pct}%"></div></div>` : '-'}
+        </td>
+        <td>${ok ? '✓' : `<span style="color:#f87171">✗</span>`}</td>
+      </tr>`;
+  }
+
+  html += '</tbody></table>';
+
+  // Czasy surowe
+  html += `<details style="margin-top:.75rem"><summary style="cursor:pointer;color:#94a3b8;font-size:.8rem">Czasy surowe</summary><div style="font-family:monospace;font-size:.8rem;padding:.5rem;background:#0f172a;border-radius:6px;margin-top:.4rem">`;
+  for (const r of results) {
+    if (r.times_s) {
+      html += `<div><strong>${r.db}</strong>: ${r.times_s.map(t => t.toFixed(6)).join(' | ')}</div>`;
+    }
+  }
+  html += '</div></details>';
+
+  area.innerHTML = html;
+}
+
+// ── Historia ──
+function addToHistory(data) {
+  const ts = new Date().toLocaleTimeString('pl-PL');
+  history.unshift({ts, ...data});
+  renderHistory();
+}
+
+function renderHistory() {
+  const el = document.getElementById('history-list');
+  if (history.length === 0) {
+    el.innerHTML = '<p style="color:#475569;font-size:.85rem;padding:.5rem">Brak historii.</p>';
+    return;
+  }
+  el.innerHTML = history.slice(0, 20).map(h => {
+    const dbs = (h.results || []).filter(r => r.status === 'ok').map(r => r.db).join(', ');
+    const avgs = (h.results || []).filter(r => r.avg_s != null)
+      .map(r => `${DB_LABELS[r.db]||r.db}: ${r.avg_s.toFixed(4)}s`).join(' | ');
+    return `<div class="hist-item">
+      <span><strong style="color:#a78bfa">${h.scenario_id}</strong> – ${h.description}</span>
+      <span class="hist-time" title="${avgs}">${h.ts}</span>
+    </div>`;
+  }).join('');
+}
+
+function clearHistory() {
+  history.length = 0;
+  renderHistory();
+}
+
+// ── Helpers ──
+function showStatus(msg, type) {
+  const area = document.getElementById('results-area');
+  area.innerHTML = `<div class="status-strip status-${type}">${msg}</div>`;
+}
+
+function showSpinner(msg) {
+  document.getElementById('results-area').innerHTML =
+    `<div class="spinner"><div class="spin-icon"></div><span>${msg}</span></div>`;
+}
+
+function setLoading(loading) {
+  document.getElementById('run-btn').disabled = loading;
+}
+
+// ── Start ──
+init();
+</script>
+</body>
+</html>
